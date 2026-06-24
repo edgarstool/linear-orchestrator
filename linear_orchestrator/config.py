@@ -16,13 +16,18 @@ def _load_envs() -> None:
 @dataclass
 class Config:
     linear_api_key: str
-    linear_webhook_secret: str
+    linear_webhook_secrets: list[str]   # may contain workspace + oauth-app secrets
     hermes_path: str
     host: str
     port: int
     hermes_timeout_sec: int
     default_model: str
     agent_linear_user_id: str
+
+    # Back-compat alias for old `cfg.linear_webhook_secret` access.
+    @property
+    def linear_webhook_secret(self) -> list[str]:
+        return self.linear_webhook_secrets
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -33,9 +38,20 @@ class Config:
             if not v:
                 missing.append(name)
             return v
+
+        # Build webhook secret candidates: primary required, additional optional.
+        primary = need("LINEAR_WEBHOOK_SECRET")
+        secrets: list[str] = []
+        if primary:
+            secrets.append(primary)
+        for extra_key in ("LINEAR_OAUTH_WEBHOOK_SECRET", "LINEAR_WEBHOOK_SECRET_2", "LINEAR_WEBHOOK_SECRET_3"):
+            v = os.environ.get(extra_key, "")
+            if v and v not in secrets:
+                secrets.append(v)
+
         cfg = cls(
             linear_api_key=need("LINEAR_API_KEY"),
-            linear_webhook_secret=need("LINEAR_WEBHOOK_SECRET"),
+            linear_webhook_secrets=secrets,
             hermes_path=os.environ.get("HERMES_PATH", "/home/edgar/.local/bin/hermes"),
             host=os.environ.get("ORCHESTRATOR_HOST", "0.0.0.0"),
             port=int(os.environ.get("ORCHESTRATOR_PORT", "8645")),
