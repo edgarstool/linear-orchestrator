@@ -16,7 +16,7 @@ def _load_envs() -> None:
 @dataclass
 class Config:
     linear_api_key: str
-    linear_webhook_secrets: list[str]   # may contain workspace + oauth-app secrets
+    linear_webhook_secrets: list  # may contain workspace + oauth-app secrets
     hermes_path: str
     host: str
     port: int
@@ -26,7 +26,7 @@ class Config:
 
     # Back-compat alias for old `cfg.linear_webhook_secret` access.
     @property
-    def linear_webhook_secret(self) -> list[str]:
+    def linear_webhook_secret(self) -> list:
         return self.linear_webhook_secrets
 
     @classmethod
@@ -41,7 +41,7 @@ class Config:
 
         # Build webhook secret candidates: primary required, additional optional.
         primary = need("LINEAR_WEBHOOK_SECRET")
-        secrets: list[str] = []
+        secrets: list = []
         if primary:
             secrets.append(primary)
         for extra_key in ("LINEAR_OAUTH_WEBHOOK_SECRET", "LINEAR_WEBHOOK_SECRET_2", "LINEAR_WEBHOOK_SECRET_3"):

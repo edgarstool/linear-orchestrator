@@ -14,6 +14,7 @@ from .session import SessionStore
 from .runner import run_hermes
 from .writer import write_back
 from .broadcast import Broadcaster
+from .dashboard import index as dashboard_index
 
 log = logging.getLogger("orch.server")
 
@@ -169,6 +170,7 @@ def make_app(cfg: Config | None = None) -> web.Application:
     app.router.add_get("/sessions", _list_sessions)
     app.router.add_get("/deliveries", _list_deliveries)
     app.router.add_get("/sessions/{session_key}/stream", _stream)
+    app.router.add_get("/", dashboard_index)
     return app
 
 
