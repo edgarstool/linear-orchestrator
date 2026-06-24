@@ -35,8 +35,19 @@ Linear  →  Cloudflare edge  →  cloudflared tunnel  →  127.0.0.1:8645
 ```bash
 git clone https://github.com/Edgar-s-Tool/linear-orchestrator.git ~/linear-orchestrator
 cd ~/linear-orchestrator
-bash scripts/install.sh           # 建 venv + 裝相依 + systemd unit
+bash scripts/install.sh           # 建 venv + 裝相依
+bash scripts/install-systemd.sh   # 選用：設為 systemd service，開機自啟（需 sudo）
 ```
+
+開機自啟前需確認 WSL systemd 已啟用：
+
+```bash
+# 在 WSL 內
+grep -q '^systemd=true' /etc/wsl.conf || { echo -e '[boot]\nsystemd=true' | sudo tee -a /etc/wsl.conf; }
+# 然後在 Windows PowerShell：wsl --shutdown
+```
+
+裝完開 `http://127.0.0.1:8645/` 看內建 dashboard（最近 sessions / deliveries + NDJSON live stream）。
 
 要在 `~/.hermes/.env`（會被 service 讀取）已經有：
 
