@@ -41,6 +41,18 @@ async def _handle_linear(request: web.Request) -> web.Response:
     except Exception as e:
         return web.json_response({"error": f"bad json: {e}"}, status=400)
 
+    # Debug dump of every accepted webhook payload for offline parser tuning.
+    # Path is cheap to disable later; useful while we're still discovering Linear's real schemas.
+    try:
+        import pathlib
+        dump_dir = pathlib.Path.home() / ".local" / "share" / "linear-orchestrator" / "payloads"
+        dump_dir.mkdir(parents=True, exist_ok=True)
+        (dump_dir / f"{int(time.time()*1000)}_{payload.get('type','unknown')}.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
     ev = parse_event(payload, cfg.agent_linear_user_id)
     act, why = should_act(ev)
     log.info("event type=%s action=%s issue=%s session=%s act=%s why=%s",

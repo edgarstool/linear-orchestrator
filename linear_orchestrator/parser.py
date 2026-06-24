@@ -58,15 +58,36 @@ def parse(payload: dict, agent_user_id: str = "") -> Event:
 
     # AgentSessionEvent — Linear's official agent protocol
     if ev.type == "AgentSessionEvent":
-        ev.agent_session_id = str(_g(data, "agentSession", "id") or data.get("agentSessionId") or "")
-        # issue context if present
-        issue = _g(data, "agentSession", "issue") or {}
-        ev.issue_id = str(issue.get("id") or "")
+        # Linear sends `agentSession` at top level (not inside data) in newer payloads;
+        # older shape had data.agentSession. Try both.
+        agent_session = (payload.get("agentSession")
+                         or data.get("agentSession")
+                         or _g(data, "session")
+                         or {})
+        ev.agent_session_id = str(
+            agent_session.get("id")
+            or payload.get("agentSessionId")
+            or data.get("agentSessionId")
+            or ""
+        )
+        issue = (agent_session.get("issue") or
+                 payload.get("issue") or
+                 data.get("issue") or {})
+        ev.issue_id = str(issue.get("id") or
+                          agent_session.get("issueId") or
+                          data.get("issueId") or
+                          payload.get("issueId") or "")
         ev.issue_identifier = str(issue.get("identifier") or "")
         ev.issue_title = str(issue.get("title") or "")
         ev.issue_url = str(issue.get("url") or "")
-        ev.body_text = str(_g(data, "prompt") or _g(data, "agentSession", "title") or "")
-        ev.mentions_agent = True  # AgentSessionEvent implies the agent is the target
+        ev.body_text = str(
+            agent_session.get("title")
+            or payload.get("prompt")
+            or data.get("prompt")
+            or _g(payload, "comment", "body")
+            or ""
+        )
+        ev.mentions_agent = True
         return ev
 
     # Issue events
@@ -100,18 +121,24 @@ def parse(payload: dict, agent_user_id: str = "") -> Event:
                 break
         return ev
 
-    # AppUserNotification (someone @-mentioned / assigned / commented on app user)
+    # AppUserNotification — Linear's real shape puts everything under top-level `notification`,
+    # NOT under `data`. The wider Linear webhook envelope uses `data` only for some types.
     if ev.type == "AppUserNotification":
-        ntype = str(data.get("type", "")).strip()
-        ev.body_text = str(data.get("title") or data.get("commentBody") or "")
-        issue = data.get("issue") or {}
-        ev.issue_id = str(issue.get("id") or data.get("issueId") or "")
+        notif = payload.get("notification") or data.get("notification") or data or {}
+        ntype = str(notif.get("type") or data.get("type") or payload.get("action") or ev.action).strip()
+        ev.actor_id = str(_g(notif, "actor", "id") or notif.get("actorId") or ev.actor_id)
+        ev.actor_name = str(_g(notif, "actor", "name") or ev.actor_name)
+        issue = notif.get("issue") or data.get("issue") or {}
+        ev.issue_id = str(issue.get("id") or notif.get("issueId") or data.get("issueId") or "")
         ev.issue_identifier = str(issue.get("identifier") or "")
         ev.issue_title = str(issue.get("title") or "")
         ev.issue_url = str(issue.get("url") or "")
+        ev.body_text = str(notif.get("commentBody") or notif.get("title")
+                           or data.get("commentBody") or data.get("title") or "")
         ev.mentions_agent = ntype in {
             "issueMention", "issueAssignedToYou", "issueCommentMention",
             "issueNewComment", "issueDelegate", "issueAgentReady",
+            "issueEmoji", "issueNewMention",
         }
         ev.notes.append(f"notification:{ntype}")
         return ev
