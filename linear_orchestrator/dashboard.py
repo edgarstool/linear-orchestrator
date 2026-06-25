@@ -64,10 +64,24 @@ HTML = """<!doctype html>
 
 <div class="card" style="margin-top:16px;">
   <div class="row">
-    <h2>Live stream (all sessions)</h2>
+    <h2>Live stream <span class="muted" id="stream-scope">(all sessions)</span></h2>
     <span class="muted" id="stream-state">connecting…</span>
   </div>
   <pre id="stream"></pre>
+</div>
+
+<div id="session-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:10; padding:30px; overflow:auto;">
+  <div style="max-width:1000px; margin:0 auto; background:#0b0d10; border-radius:12px; padding:18px;">
+    <div class="row">
+      <h2 id="modal-title" style="margin:0;">session</h2>
+      <div>
+        <button id="modal-stream-btn" onclick="streamFor(currentSession)">stream this</button>
+        <button onclick="closeSession()">close</button>
+      </div>
+    </div>
+    <p class="muted" id="modal-stats">loading…</p>
+    <table style="margin-top:8px;"><thead><tr><th>ts</th><th>status</th><th>latency</th><th>detail</th></tr></thead><tbody id="modal-deliv"></tbody></table>
+  </div>
 </div>
 
 <script>
@@ -98,7 +112,7 @@ async function loadAll() {
   document.getElementById('kpi-sess').textContent = stats.active_sessions;
   const tbS = document.querySelector('#t-sess tbody');
   tbS.innerHTML = s.map(r => `
-    <tr>
+    <tr style="cursor:pointer" onclick="openSession('${esc(r.session_key)}')">
       <td><code class="k">${esc(r.session_key)}</code></td>
       <td class="muted">${esc(r.issue || r.agent_session || '')}</td>
       <td>${r.events}</td>
@@ -118,14 +132,15 @@ async function loadAll() {
 }
 
 let streamCtrl;
-async function subscribeStream() {
+async function subscribeStream(key) {
   if (streamCtrl) streamCtrl.abort();
   streamCtrl = new AbortController();
   const ss = document.getElementById('stream');
   const state = document.getElementById('stream-state');
   state.textContent = 'connecting…';
+  const sub = encodeURIComponent(key || '*');
   try {
-    const r = await fetch(HUB + '/sessions/*/stream', { signal: streamCtrl.signal });
+    const r = await fetch(HUB + '/sessions/' + sub + '/stream', { signal: streamCtrl.signal });
     state.textContent = 'connected';
     const reader = r.body.getReader();
     const dec = new TextDecoder();
@@ -158,13 +173,44 @@ async function subscribeStream() {
     }
   } catch (e) {
     state.textContent = 'reconnecting in 3s…';
-    setTimeout(subscribeStream, 3000);
+    setTimeout(() => subscribeStream(currentSession), 3000);
   }
+}
+
+let currentSession = '*';
+async function openSession(key) {
+  currentSession = key;
+  document.getElementById('modal-title').textContent = key;
+  document.getElementById('session-modal').style.display = 'block';
+  const ds = await fetch(HUB + '/deliveries?session_key=' + encodeURIComponent(key)).then(r=>r.json());
+  const tb = document.getElementById('modal-deliv');
+  tb.innerHTML = ds.map(r => `
+    <tr>
+      <td class="muted">${esc(r.ts?.slice(11,19) || '')}</td>
+      <td>${pill(r.status)}</td>
+      <td class="muted">${r.latency_ms ? (r.latency_ms/1000).toFixed(1)+'s' : ''}</td>
+      <td class="muted">${esc(r.detail).slice(0, 220)}</td>
+    </tr>`).join('');
+  const total = ds.length;
+  const ok = ds.filter(r => r.status === 'written').length;
+  const ag = ds.filter(r => r.status !== 'skip' && r.status !== 'duplicate').length;
+  document.getElementById('modal-stats').textContent =
+    `${total} events · ${ok} written · ${ag} agent runs`;
+}
+function closeSession() {
+  document.getElementById('session-modal').style.display = 'none';
+  if (currentSession !== '*') { currentSession = '*'; streamFor('*'); }
+}
+function streamFor(key) {
+  currentSession = key;
+  document.getElementById('stream-scope').textContent = key === '*' ? '(all sessions)' : `(${key})`;
+  document.getElementById('stream').textContent = '';
+  subscribeStream(key);
 }
 
 loadAll();
 setInterval(loadAll, 30000);
-subscribeStream();
+subscribeStream('*');
 </script>
 </body></html>"""
 

@@ -151,10 +151,18 @@ async def _list_sessions(request: web.Request) -> web.Response:
 
 async def _list_deliveries(request: web.Request) -> web.Response:
     store: SessionStore = request.app["store"]
-    rows = store._conn.execute(
-        "SELECT delivery_id, ts, session_key, status, substr(detail,1,300), latency_ms "
-        "FROM deliveries ORDER BY ts DESC LIMIT 30"
-    ).fetchall()
+    session_key = request.query.get("session_key", "")
+    if session_key:
+        rows = store._conn.execute(
+            "SELECT delivery_id, ts, session_key, status, substr(detail,1,400), latency_ms "
+            "FROM deliveries WHERE session_key=? ORDER BY ts DESC LIMIT 100",
+            (session_key,),
+        ).fetchall()
+    else:
+        rows = store._conn.execute(
+            "SELECT delivery_id, ts, session_key, status, substr(detail,1,300), latency_ms "
+            "FROM deliveries ORDER BY ts DESC LIMIT 30"
+        ).fetchall()
     return web.json_response([
         {"delivery_id": r[0], "ts": r[1], "session_key": r[2],
          "status": r[3], "detail": r[4], "latency_ms": r[5]} for r in rows

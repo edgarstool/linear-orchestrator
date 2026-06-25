@@ -111,6 +111,13 @@ def parse(payload: dict, agent_user_id: str = "") -> Event:
         ev.issue_url = str(_g(data, "issue", "url") or "")
         ev.comment_body = str(data.get("body") or "")
         ev.body_text = ev.comment_body
+        # Comments authored by the agent itself (echoed back by Linear) must NOT
+        # re-trigger the agent — otherwise every reply creates a new run loop.
+        comment_user_id = str(data.get("userId") or _g(data, "user", "id") or "")
+        if agent_user_id and comment_user_id == agent_user_id:
+            ev.actor_id = comment_user_id
+            ev.notes.append("self-comment (skip)")
+            return ev   # mentions_agent stays False → should_act returns False
         if agent_user_id and agent_user_id in ev.comment_body:
             ev.mentions_agent = True
             ev.notes.append("mentioned via id in body")
@@ -128,6 +135,11 @@ def parse(payload: dict, agent_user_id: str = "") -> Event:
         ntype = str(notif.get("type") or data.get("type") or payload.get("action") or ev.action).strip()
         ev.actor_id = str(_g(notif, "actor", "id") or notif.get("actorId") or ev.actor_id)
         ev.actor_name = str(_g(notif, "actor", "name") or ev.actor_name)
+        # Skip notifications about our own activity (Linear notifies app user when their own
+        # agentActivity lands; we don't want to react to ourselves).
+        if agent_user_id and ev.actor_id == agent_user_id:
+            ev.notes.append("self-actor (skip)")
+            return ev
         issue = notif.get("issue") or data.get("issue") or {}
         ev.issue_id = str(issue.get("id") or notif.get("issueId") or data.get("issueId") or "")
         ev.issue_identifier = str(issue.get("identifier") or "")
