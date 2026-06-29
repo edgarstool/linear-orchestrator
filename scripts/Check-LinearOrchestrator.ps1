@@ -23,11 +23,11 @@ Write-Host "Local health ($(Get-OrchestratorHealthUrl)): $(if ($localOk) { 'OK' 
 
 if ($Public) {
     try {
-        $pub = Invoke-WebRequest -UseBasicParsing -Uri "https://webhook.whoasked.vip/healthz" -TimeoutSec 10
-        Write-Host "Public health (webhook.whoasked.vip): $($pub.StatusCode) $($pub.Content)"
+        $pub = Invoke-WebRequest -UseBasicParsing -Uri "https://webhooks.edgars.tools/healthz" -TimeoutSec 10
+        Write-Host "Public health (webhooks.edgars.tools): $($pub.StatusCode) $($pub.Content)"
     } catch {
-        Write-Host "Public health (webhook.whoasked.vip): FAIL — $($_.Exception.Message)"
-        Write-Host "Fix tunnel: Cloudflare Dashboard → edgar-local-01-tunnel → webhook.whoasked.vip → http://localhost:8645"
+        Write-Host "Public health (webhooks.edgars.tools): FAIL — $($_.Exception.Message)"
+        Write-Host "Fix tunnel: Cloudflare Dashboard → edgar-local-01-tunnel → webhooks.edgars.tools → http://localhost:8645"
     }
 }
 

@@ -69,10 +69,10 @@ Dashboard：`http://127.0.0.1:8645/`
 Token tunnel **edgar-local-01-tunnel**（Cloudflare Dashboard 管理）：
 
 ```
-webhook.whoasked.vip → http://localhost:8645
+webhooks.edgars.tools → http://localhost:8645
 ```
 
-（若改用 `webhooks.edgars.tools`，同樣指 `http://localhost:8645`，不要用 WSL IP。）
+（舊 `webhook.whoasked.vip` 路由已移除；勿再用 WSL IP。）
 
 Cloudflared 跑在 Windows 服務即可。
 ## Session 規則

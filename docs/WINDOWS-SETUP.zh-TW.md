@@ -90,7 +90,7 @@ G:\AI_WORK_512\repos\linear-orchestrator\scripts\install-windows-scheduled-task.
 
 **Networks → Tunnels → edgar-local-01-tunnel → Public Hostname**
 
-把 `webhook.whoasked.vip` 的 Service 設成：
+把 **webhooks.edgars.tools** 的 Service 設成：
 
 ```
 http://localhost:8645
@@ -98,7 +98,7 @@ http://localhost:8645
 
 > **不要**再填 WSL IP（172.30.x.x）。Windows 本機 localhost 就夠了。
 
-存檔後幾秒，<https://webhook.whoasked.vip/healthz> 應回 200。
+存檔後幾秒，<https://webhooks.edgars.tools/healthz> 應回 200。
 
 若還是 530/502：確認 orchestrator 有在跑 + tunnel hostname 指到 **8645** 不是舊的 **8644**。
 

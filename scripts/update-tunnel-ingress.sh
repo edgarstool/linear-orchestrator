@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Switch ~/.cloudflared/config.yml on the Windows host:
-#   webhook.whoasked.vip → <WSL_IP>:8645  (the orchestrator)
+#   webhooks.edgars.tools → localhost:8645  (Dashboard edgar-local-01-tunnel; Windows native)
 # Run from WSL. Edits the Windows path via /mnt/c.
 set -e
 WIN_USER="${WIN_USER:-EdgarsTool}"
