@@ -13,7 +13,7 @@ from .sig import verify as verify_sig
 from .parser import parse as parse_event, should_act
 from .session import SessionStore
 from .runner import run_hermes
-from .writer import write_back
+from .writer import write_back, emit_thought_ack
 from .broadcast import Broadcaster
 from .dashboard import index as dashboard_index
 
@@ -84,6 +84,20 @@ async def _process(cfg: Config, store: SessionStore, ev, delivery_id: str,
             "event_type": ev.type, "action": ev.action,
             "issue_identifier": ev.issue_identifier,
         })
+        if ev.type == "AgentSessionEvent" and ev.agent_session_id:
+            ok_t, detail_t = await emit_thought_ack(ev)
+            log.info("thought ack delivery=%s ok=%s %s", delivery_id, ok_t, detail_t[:120])
+            await broadcaster.publish(ev.session_key, {
+                "type": "thought" if ok_t else "thought_fail",
+                "delivery_id": delivery_id,
+                "detail": detail_t[:300],
+            })
+            if not ok_t:
+                ms = int((time.time() - t0) * 1000)
+                store.record_delivery(
+                    delivery_id, ev.session_key, "thought_fail", detail_t[:1000], latency_ms=ms,
+                )
+                return
         log.info("→ run hermes for delivery=%s session=%s", delivery_id, ev.session_key)
         await broadcaster.publish(ev.session_key, {"type": "hermes.started", "delivery_id": delivery_id})
         ok, reply = await run_hermes(ev, cfg.hermes_path, cfg.hermes_timeout_sec,

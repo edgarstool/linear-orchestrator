@@ -99,6 +99,48 @@ def _dig(d, *keys, default=None):
     return cur if cur is not None else default
 
 
+async def _post_agent_activity(
+    session: aiohttp.ClientSession,
+    agent_session_id: str,
+    activity_type: str,
+    body: str,
+) -> tuple[bool, str]:
+    """Post agentActivityCreate. Requires OAuth app token (not personal API key)."""
+    oauth = await _get_app_token(session)
+    if not oauth:
+        return False, "no OAuth app token; set LINEAR_OAUTH_CLIENT_ID/SECRET"
+    data = await _gql(session, f"Bearer {oauth}", AGENT_ACTIVITY_MUTATION, {
+        "input": {
+            "agentSessionId": agent_session_id,
+            "content": {"type": activity_type, "body": body},
+        }
+    })
+    ok = bool(_dig(data, "data", "agentActivityCreate", "success", default=False))
+    act_id = _dig(data, "data", "agentActivityCreate", "agentActivity", "id", default="")
+    errors = data.get("errors") if isinstance(data, dict) else None
+    detail = f"agentActivity type={activity_type} ok={ok} id={act_id}"
+    if errors:
+        detail += f" errors={str(errors)[:250]}"
+    return ok, detail
+
+
+async def emit_thought_ack(ev: Event, body: str | None = None) -> tuple[bool, str]:
+    """Emit a `thought` activity within Linear's 10s responsiveness window.
+
+    Linear marks agent sessions as unresponsive if no activity arrives within
+    ~10 seconds of AgentSessionEvent `created`. Call this before slow work.
+    """
+    if not ev.agent_session_id:
+        return False, "no agent_session_id"
+    if body is None:
+        if ev.action == "prompted":
+            body = "收到你的後續訊息，Hermes 繼續處理中…"
+        else:
+            body = "收到委派，Hermes 開始處理…"
+    async with aiohttp.ClientSession() as session:
+        return await _post_agent_activity(session, ev.agent_session_id, "thought", body)
+
+
 async def write_back(ev: Event, reply: str, api_key: str) -> tuple[bool, str]:
     """Returns (ok, detail)."""
     if not reply.strip():
@@ -106,23 +148,9 @@ async def write_back(ev: Event, reply: str, api_key: str) -> tuple[bool, str]:
 
     async with aiohttp.ClientSession() as session:
         if ev.agent_session_id:
-            # agentActivityCreate requires an OAuth app token (client_credentials grant).
-            # Personal API keys are explicitly rejected by Linear with FORBIDDEN.
-            oauth = await _get_app_token(session)
-            if not oauth:
-                return False, "no OAuth app token; set LINEAR_OAUTH_CLIENT_ID/SECRET"
-            data = await _gql(session, f"Bearer {oauth}", AGENT_ACTIVITY_MUTATION, {
-                "input": {
-                    "agentSessionId": ev.agent_session_id,
-                    "content": {"type": "response", "body": reply},
-                }
-            })
-            ok = bool(_dig(data, "data", "agentActivityCreate", "success", default=False))
-            act_id = _dig(data, "data", "agentActivityCreate", "agentActivity", "id", default="")
-            errors = data.get("errors") if isinstance(data, dict) else None
-            detail = f"agentActivity ok={ok} id={act_id}"
-            if errors:
-                detail += f" errors={str(errors)[:250]}"
+            ok, detail = await _post_agent_activity(
+                session, ev.agent_session_id, "response", reply,
+            )
             return ok, detail
 
         if not ev.issue_id:
