@@ -1,20 +1,17 @@
 @echo off
-REM Install a Windows Scheduled Task that auto-launches the orchestrator
-REM whenever Edgar logs in. Falls back from systemd (works even without
-REM WSL systemd or sudo password).
-REM
-REM Triggers WSL Ubuntu-24.04-G, runs start.sh, exits.
+REM Install a Windows Scheduled Task that auto-launches the orchestrator on logon.
+REM Windows-native (no WSL). Uses scripts\start-windows.ps1.
 
 setlocal
 set "TASK=linear-orchestrator-on-logon"
-set "WSL=wsl.exe"
-set "WSL_ARGS=-d Ubuntu-24.04-G -e bash -lc \"cd /mnt/g/AI_WORK_512/repos/linear-orchestrator && bash scripts/start.sh\""
+set "PS=powershell.exe"
+set "PS_ARGS=-NoProfile -ExecutionPolicy Bypass -File \"V:\projects\linear-orchestrator\scripts\start-windows.ps1\""
 
 echo Removing old task if any...
 schtasks /Delete /TN "%TASK%" /F >nul 2>&1
 
-echo Creating scheduled task "%TASK%" (trigger: at logon, runs as current user)...
-schtasks /Create /SC ONLOGON /TN "%TASK%" /TR "%WSL% %WSL_ARGS%" /RL LIMITED /F
+echo Creating scheduled task "%TASK%" (trigger: at logon)...
+schtasks /Create /SC ONLOGON /TN "%TASK%" /TR "%PS% %PS_ARGS%" /RL LIMITED /F
 if errorlevel 1 (
   echo Failed to create task.
   pause
@@ -22,9 +19,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done. Task will fire on next Windows logon.
-echo You can also run it now with:
-echo   schtasks /Run /TN "%TASK%"
-echo Or remove with:
-echo   schtasks /Delete /TN "%TASK%" /F
+echo Done. Run now: schtasks /Run /TN "%TASK%"
 endlocal
