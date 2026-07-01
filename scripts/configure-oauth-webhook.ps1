@@ -48,13 +48,17 @@ $newLines | Set-Content $envFile -Encoding utf8
 Write-Host "已寫入 LINEAR_OAUTH_WEBHOOK_SECRET（備份 $bak）" -ForegroundColor Green
 
 Write-Host "重啟 orchestrator ..."
-Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-  Where-Object { $_.CommandLine -match 'linear_orchestrator' } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Get-NetTCPConnection -LocalPort 8645 -State Listen -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 1
 $root = Split-Path $PSScriptRoot -Parent
 Start-Process -FilePath "$root\.venv\Scripts\python.exe" -ArgumentList '-m','linear_orchestrator' -WindowStyle Hidden
 Start-Sleep -Seconds 2
 curl -s http://127.0.0.1:8645/healthz
+Write-Host ""
+curl -s http://127.0.0.1:8645/diag
+Write-Host ""
+Write-Host "建議另開一個 PowerShell 常駐備援輪詢：" -ForegroundColor Yellow
+Write-Host "  .\scripts\poll-agent-sessions.ps1" -ForegroundColor White
 Write-Host ""
 Write-Host "完成。回 Linear 對 EDG-159 再 Delegate → Hermes 一次測試。" -ForegroundColor Cyan

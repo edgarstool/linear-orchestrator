@@ -19,6 +19,27 @@ from .dashboard import index as dashboard_index
 
 log = logging.getLogger("orch.server")
 
+_REJECT_DIR = Path.home() / ".local" / "share" / "linear-orchestrator" / "rejects"
+
+
+def _log_reject(delivery_id: str, reason: str, sig: str, ts: str, body_len: int) -> None:
+    """Persist rejected webhooks so we can tell if Linear hit us with a bad signature."""
+    try:
+        _REJECT_DIR.mkdir(parents=True, exist_ok=True)
+        rec = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "delivery_id": delivery_id,
+            "reason": reason,
+            "has_sig": bool(sig),
+            "has_ts": bool(ts),
+            "body_len": body_len,
+        }
+        (_REJECT_DIR / f"{delivery_id}.json").write_text(
+            json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
 
 async def _handle_linear(request: web.Request) -> web.Response:
     cfg: Config = request.app["cfg"]
@@ -33,6 +54,7 @@ async def _handle_linear(request: web.Request) -> web.Response:
     ok, reason = verify_sig(body, cfg.linear_webhook_secret, sig, ts)
     if not ok:
         log.warning("sig verify failed: %s", reason)
+        _log_reject(delivery_id, reason, sig, ts, len(body))
         return web.json_response({"error": "invalid signature", "reason": reason}, status=401)
 
     if store.already_processed(delivery_id):
@@ -136,6 +158,31 @@ async def _process(cfg: Config, store: SessionStore, ev, delivery_id: str,
 
 async def _healthz(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "ts": int(time.time())})
+
+
+async def _diag(request: web.Request) -> web.Response:
+    cfg: Config = request.app["cfg"]
+    reject_count = 0
+    if _REJECT_DIR.exists():
+        reject_count = sum(1 for p in _REJECT_DIR.iterdir() if p.suffix == ".json")
+    return web.json_response({
+        "ok": True,
+        "webhook_secrets_loaded": len(cfg.linear_webhook_secrets),
+        "oauth_secret_configured": len(cfg.linear_webhook_secrets) >= 2,
+        "agent_linear_user_id": cfg.agent_linear_user_id or None,
+        "reject_log_count": reject_count,
+    })
+
+
+async def _list_rejects(request: web.Request) -> web.Response:
+    rows = []
+    if _REJECT_DIR.exists():
+        for p in sorted(_REJECT_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
+            try:
+                rows.append(json.loads(p.read_text(encoding="utf-8")))
+            except Exception:
+                pass
+    return web.json_response(rows)
 
 
 async def _stream(request: web.Request) -> web.StreamResponse:
@@ -278,6 +325,8 @@ def make_app(cfg: Config | None = None) -> web.Application:
     app["_pending"] = set()
     app.router.add_post("/webhooks/linear", _handle_linear)
     app.router.add_get("/healthz", _healthz)
+    app.router.add_get("/diag", _diag)
+    app.router.add_get("/rejects", _list_rejects)
     app.router.add_get("/sessions", _list_sessions)
     app.router.add_get("/deliveries", _list_deliveries)
     app.router.add_get("/stats", _stats)

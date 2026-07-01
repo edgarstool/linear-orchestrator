@@ -8,7 +8,7 @@ from typing import Tuple
 
 
 def verify(body: bytes, secret: str, sig_header: str, ts_header: str,
-           tolerance_sec: int = 60) -> Tuple[bool, str]:
+           tolerance_sec: int = 300) -> Tuple[bool, str]:
     """Return (ok, reason). `secret` may be a single string OR a list/tuple/iterable
     of candidate secrets — useful because Linear sends both:
       1. workspace webhook (signed with LINEAR_WEBHOOK_SECRET)

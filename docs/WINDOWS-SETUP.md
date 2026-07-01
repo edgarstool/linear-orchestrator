@@ -55,6 +55,14 @@ curl -i https://webhooks.edgars.tools/healthz
 
 > 注意：Linear 新版用 **Delegate**（不是 Assignee）把工單交給 agent。
 
+若仍「Did not respond」：多半是 **OAuth Application webhook** 沒設好（不是 workspace webhook）。
+請開 https://linear.app/settings/api/applications → Hermes → Webhooks：
+URL = `https://webhooks.edgars.tools/webhooks/linear`，勾 **Agent session events**，Signing secret 貼到 `LINEAR_OAUTH_WEBHOOK_SECRET`。
+
+**備援（webhook 漏送時）**：另開 PowerShell 常駐 `.\scripts\poll-agent-sessions.ps1`，每 3 秒輪詢 pending session 並本機觸發 Hermes。
+
+診斷：`http://127.0.0.1:8645/diag`（secrets 數量）、`/rejects`（Linear 有打到但驗章失敗）。
+
 ## 5. Warp Oz（雲端 agent）
 
 ```powershell
