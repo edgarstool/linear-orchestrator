@@ -3,9 +3,47 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import signal
 from .parser import Event
 
 log = logging.getLogger("orch.runner")
+
+
+async def _terminate_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Best-effort kill a hermes worker and its whole session, then reap it.
+
+    hermes is spawned with ``start_new_session=True`` so it becomes the leader of
+    a fresh process group/session. Killing only the direct child (``proc.kill``)
+    would orphan any grandchildren it spawned, leaking dead worker sessions and
+    bloating memory. We therefore signal the entire process group when possible.
+
+    This is safe and idempotent: killing an already-dead process/group is a
+    no-op, and it never raises so it can be called from cleanup paths.
+    """
+    if proc.returncode is not None:
+        return  # already exited; nothing to clean up
+    try:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                # group gone or not permitted: fall back to the single process
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+        else:
+            proc.kill()
+    except ProcessLookupError:
+        pass
+    except Exception:
+        log.warning("failed to terminate hermes process group", exc_info=True)
+    # Reap the child so it does not linger as a zombie.
+    try:
+        await proc.wait()
+    except Exception:
+        pass
 
 
 def _build_prompt(ev: Event) -> str:
@@ -52,10 +90,14 @@ async def run_hermes(ev: Event, hermes_path: str, timeout_sec: int,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,  # detach from controlling tty
         )
+    except FileNotFoundError:
+        return False, f"hermes not found at {hermes_path}"
+
+    try:
         try:
             out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
         except asyncio.TimeoutError:
-            proc.kill()
+            await _terminate_process_group(proc)
             return False, f"hermes timeout >{timeout_sec}s"
 
         out_text = (out or b"").decode("utf-8", errors="replace").strip()
@@ -74,8 +116,11 @@ async def run_hermes(ev: Event, hermes_path: str, timeout_sec: int,
             log.warning("hermes rc=%s no reply; stderr=%s", proc.returncode, err_text[:500])
             return False, f"hermes exit={proc.returncode}: {err_text[:300] or out_text[:300]}"
         return True, ""
-    except FileNotFoundError:
-        return False, f"hermes not found at {hermes_path}"
+    finally:
+        # Best-effort: if the worker is still alive here (e.g. this coroutine was
+        # cancelled during shutdown), make sure we do not leak its session.
+        if proc.returncode is None:
+            await _terminate_process_group(proc)
 
 
 def _extract_final_reply(stdout: str) -> str:

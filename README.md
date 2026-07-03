@@ -84,6 +84,14 @@ Cloudflared 跑在 Windows 服務即可。
 | `Comment` 提到 agent | `linear-issue-<identifier>` | 接續對話，回 comment |
 | 其他 | — | log + skip |
 
+## 清理與資源回收
+
+任務結束後採 best-effort、non-blocking 清理，避免殘留膨脹記憶體或留下過時狀態：
+
+- **背景任務**：每個 webhook 觸發的 `_process` 任務都登記在 `app["_pending"]`，完成 / 失敗 / 取消時透過 done callback 自動移除，`_pending` 只保留真正在跑的工作。
+- **hermes worker session**：hermes 以 `start_new_session=True` 啟動、自成 process group。逾時或本服務關閉時，會對整個 process group 送 `SIGKILL`（POSIX）並 reap，避免 hermes 衍生的孫程序變孤兒殘留；已結束的程序則跳過。清理邏輯冪等且不會拋錯。
+- **payload 檔**：`payloads/` 內超過 7 天的 dump 由背景 loop 自動刪除。
+
 ## 依賴
 
 - Python 3.10+（Windows 或 WSL）
