@@ -7,6 +7,9 @@ from .parser import Event
 
 log = logging.getLogger("orch.runner")
 
+# hermes top-level flag used to cap the model context window (tokens).
+HERMES_CONTEXT_LENGTH_FLAG = "--context-length"
+
 
 def _build_prompt(ev: Event) -> str:
     parts = [
@@ -35,15 +38,27 @@ def _build_prompt(ev: Event) -> str:
     return "\n".join(parts)
 
 
-async def run_hermes(ev: Event, hermes_path: str, timeout_sec: int,
-                     session_key: str, default_model: str = "") -> tuple[bool, str]:
-    """Returns (ok, response_text). response_text is the agent's final reply."""
-    prompt = _build_prompt(ev)
+def _build_hermes_args(hermes_path: str, prompt: str, session_key: str,
+                       default_model: str = "", context_length: int | None = None) -> list:
+    """Assemble the hermes argv. Context length is only added when configured,
+    so existing setups (no context length) invoke hermes exactly as before."""
     # hermes top-level options come BEFORE any subcommand; -z = non-interactive prompt mode
     args = [hermes_path, "-z", prompt, "--cli", "--continue", session_key, "--skills", "linear", "--ignore-user-config"]
     if default_model:
         args.extend(["-m", default_model])
-    log.info("hermes invoke session=%s args_len=%d prompt_len=%d", session_key, len(args), len(prompt))
+    if context_length and context_length > 0:
+        args.extend([HERMES_CONTEXT_LENGTH_FLAG, str(context_length)])
+    return args
+
+
+async def run_hermes(ev: Event, hermes_path: str, timeout_sec: int,
+                     session_key: str, default_model: str = "",
+                     context_length: int | None = None) -> tuple[bool, str]:
+    """Returns (ok, response_text). response_text is the agent's final reply."""
+    prompt = _build_prompt(ev)
+    args = _build_hermes_args(hermes_path, prompt, session_key, default_model, context_length)
+    log.info("hermes invoke session=%s model=%s ctx_len=%s args_len=%d prompt_len=%d",
+             session_key, default_model or "(default)", context_length or "(unset)", len(args), len(prompt))
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,

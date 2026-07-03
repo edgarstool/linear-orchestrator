@@ -109,7 +109,8 @@ async def _process(cfg: Config, store: SessionStore, ev, delivery_id: str,
         log.info("→ run hermes for delivery=%s session=%s", delivery_id, ev.session_key)
         await broadcaster.publish(ev.session_key, {"type": "hermes.started", "delivery_id": delivery_id})
         ok, reply = await run_hermes(ev, cfg.hermes_path, cfg.hermes_timeout_sec,
-                                     ev.session_key, cfg.default_model)
+                                     ev.session_key, cfg.default_model,
+                                     cfg.context_length_for(cfg.default_model))
         if not ok:
             ms = int((time.time() - t0) * 1000)
             log.warning("hermes failed: %s", reply[:200])

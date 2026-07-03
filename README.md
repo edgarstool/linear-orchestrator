@@ -84,6 +84,21 @@ Cloudflared 跑在 Windows 服務即可。
 | `Comment` 提到 agent | `linear-issue-<identifier>` | 接續對話，回 comment |
 | 其他 | — | log + skip |
 
+## 每模型上下文長度設定
+
+可選設定，讓不同模型使用各自的上下文長度上限（tokens）；未設定時行為與舊版完全相同（向後相容）。
+
+- `DEFAULT_CONTEXT_LENGTH`：全域 fallback 上限。空白或 `0` 視為未設定。
+- `MODEL_CONTEXT_LENGTHS`：每模型覆蓋，優先於全域值。支援兩種格式：
+  - pairs：`model-a=8000,model-b=32000`（`;` 也可當分隔符）
+  - JSON：`{"model-a": 8000, "model-b": 32000}`
+
+解析規則：
+
+- 活躍模型（`DEFAULT_MODEL`）若有自己的覆蓋值，使用該值；否則 fallback 到 `DEFAULT_CONTEXT_LENGTH`；再否則不套用限制。
+- 無效、缺漏或非正數的值會被安全略過，永遠 fallback，不會把上限縮到不合理的數字。
+- 有解析出上限時，會以 `--context-length <n>` 傳給 hermes。
+
 ## 依賴
 
 - Python 3.10+（Windows 或 WSL）
