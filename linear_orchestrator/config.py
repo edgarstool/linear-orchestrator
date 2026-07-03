@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 
 def _load_envs() -> None:
@@ -11,6 +11,29 @@ def _load_envs() -> None:
     for p in (Path.home() / ".hermes" / ".env", Path.cwd() / ".env"):
         if p.exists():
             load_dotenv(p, override=False)
+
+
+def _collect_webhook_secrets() -> list[str]:
+    """Merge webhook signing secrets from process env and ~/.hermes/.env.
+
+    Doppler may inject LINEAR_WEBHOOK_SECRET while the OAuth-app signing secret
+    lives only in ~/.hermes/.env as LINEAR_OAUTH_WEBHOOK_SECRET. Delegate
+    (AgentSessionEvent) requires BOTH candidates when values differ.
+    """
+    file_vals = dotenv_values(Path.home() / ".hermes" / ".env") or {}
+    keys = (
+        "LINEAR_WEBHOOK_SECRET",
+        "LINEAR_OAUTH_WEBHOOK_SECRET",
+        "LINEAR_WEBHOOK_SECRET_2",
+        "LINEAR_WEBHOOK_SECRET_3",
+    )
+    secrets: list[str] = []
+    for key in keys:
+        for raw in (os.environ.get(key, ""), str(file_vals.get(key) or "")):
+            v = raw.strip()
+            if v and v not in secrets:
+                secrets.append(v)
+    return secrets
 
 
 @dataclass
@@ -39,15 +62,10 @@ class Config:
                 missing.append(name)
             return v
 
-        # Build webhook secret candidates: primary required, additional optional.
-        primary = need("LINEAR_WEBHOOK_SECRET")
-        secrets: list = []
-        if primary:
-            secrets.append(primary)
-        for extra_key in ("LINEAR_OAUTH_WEBHOOK_SECRET", "LINEAR_WEBHOOK_SECRET_2", "LINEAR_WEBHOOK_SECRET_3"):
-            v = os.environ.get(extra_key, "")
-            if v and v not in secrets:
-                secrets.append(v)
+        # Build webhook secret candidates: workspace + OAuth app may differ.
+        secrets = _collect_webhook_secrets()
+        if not secrets:
+            missing.append("LINEAR_WEBHOOK_SECRET")
 
         cfg = cls(
             linear_api_key=need("LINEAR_API_KEY"),
