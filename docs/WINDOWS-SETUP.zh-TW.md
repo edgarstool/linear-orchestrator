@@ -39,7 +39,7 @@ orchestrator 需要這些（名稱一字不差）：
 
 **放哪裡（二選一）：**
 
-1. **`C:\Users\EdgarsTool\.hermes\.env`** — 跟 Hermes 桌面版同一資料夾（推薦）
+1. **`C:\Users\<你>\.hermes\.env`** — 跟 Hermes 桌面版同一資料夾（推薦）
 2. **Doppler** `handcraft-mcp` / `prd` — 腳本會自動 `doppler run`，並把 `LINEAR_CLIENT_ID` 對應成 `LINEAR_OAUTH_CLIENT_ID`
 
 > 若你之前只在 WSL 有 `.env`，可一次性複製（不會顯示內容）：
@@ -129,8 +129,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Start-LinearOrchestrator.ps1 
 
 ## Hermes 桌面版
 
-- 設定目錄：`C:\Users\EdgarsTool\.hermes\`
-- Hermes CLI 通常在：`C:\Users\EdgarsTool\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe`
+- 設定目錄：`C:\Users\<你>\.hermes\`
+- Hermes CLI 通常在：`C:\Users\<你>\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe`
 - orchestrator 會用 CLI 叫 Hermes 做事（`--skills linear`），**不需要**再跑 WSL gateway 8644
 
 ---
@@ -139,6 +139,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Start-LinearOrchestrator.ps1 
 
 | 文件 | 用途 |
 |------|------|
-| `docs/WINDOWS-SETUP.zh-TW.md` | 本文件 |
+| `./WINDOWS-SETUP.zh-TW.md` | 本文件 |
 | `G:\AI_WORK_512\repos\cloudflared\HERMES-WEBHOOK.md` | Tunnel + 架構 |
 | `V:\projects\mcp-handcraft\docs\Linear-Agent人類委派-新手版.md` | Linear 委派流程 |
