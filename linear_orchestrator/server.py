@@ -8,6 +8,7 @@ from pathlib import Path
 from aiohttp import web
 
 import os
+from . import __version__
 from .config import Config
 from .sig import verify as verify_sig
 from .parser import parse as parse_event, should_act
@@ -143,7 +144,7 @@ async def _process(cfg: Config, store: SessionStore, ev, delivery_id: str,
 
 
 async def _healthz(request: web.Request) -> web.Response:
-    return web.json_response({"ok": True, "ts": int(time.time())})
+    return web.json_response({"status": "ok", "version": __version__})
 
 
 async def _stream(request: web.Request) -> web.StreamResponse:
