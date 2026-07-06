@@ -75,12 +75,10 @@ bash scripts/test.sh    # 自製簽章測試端到端
 
 ## tunnel 整合
 
-> **硬護欄：`webhooks.edgars.tools` 是這個 orchestrator 用的 gateway ingress；`hooks.edgars.tools` 是另一條 Cloudflare Worker inbox，不要混用。**
-
-`~/.cloudflared/config.yml` ingress 把 `webhooks.edgars.tools` 從原本指向 hermes 8644 改成指這個 service：
+`~/.cloudflared/config.yml` ingress 把 `webhook.whoasked.vip` 從原本指向 hermes 8644 改成指這個 service：
 
 ```yaml
-- hostname: webhooks.edgars.tools
+- hostname: webhook.whoasked.vip
   service: http://<WSL_IP>:8645
 ```
 
@@ -90,7 +88,7 @@ scripts/update-ingress.cmd 會幫忙自動偵測 WSL IP + 改 + 重啟 tunnel。
 
 | Event 類型 | session key | 行為 |
 |---|---|---|
-| `AgentSessionEvent` | `linear-as-<agent_session_id>` | 10 秒內回 `thought`，完成後回 `response`（`agentActivityCreate`） |
+| `AgentSessionEvent` | `linear-as-<agent_session_id>` | 走 Linear Agent Session 協定，回 `agentSessionActivityCreate` |
 | `Issue` 被指派給 agent | `linear-issue-<identifier>` | 回 ack comment |
 | `Comment` 提到 agent | `linear-issue-<identifier>` | 接續對話，回 comment |
 | 其他 | — | log + skip |
