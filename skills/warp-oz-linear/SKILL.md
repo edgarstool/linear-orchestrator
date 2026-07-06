@@ -8,7 +8,7 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [warp, oz, linear, cloud-agent, integration, devops, github, pr]
-    related_skills: [linear-webhook-bridge, deploy-pilot]
+    related_skills: [warp-oz-cursor, warp-oz-router, warp-oz-deploy, warp-oz-monitor, warp-oz-github-actions, linear-webhook-bridge, deploy-pilot]
 ---
 
 # Warp Oz × Linear
@@ -70,6 +70,10 @@ Linear issue
 **本機一鍵腳本：**
 - `V:\projects\linear-orchestrator\scripts\setup-warp-api.ps1` — 檢查登入、API、環境
 - `V:\projects\linear-orchestrator\scripts\ask-warp.ps1` — 用白話叫 Warp 做事
+- `V:\projects\linear-orchestrator\scripts\watch-warp-run.ps1` — 盯任務狀態與 follow-up
+- `V:\projects\linear-orchestrator\scripts\install-warp-skills.ps1` — 安裝全部 Warp 技能到各 Agent
+
+**相關技能：** `warp-oz-cursor`（Cursor 必叫 Warp）、`warp-oz-router`（分工表）、`warp-oz-deploy`、`warp-oz-monitor`、`warp-oz-github-actions`
 
 ## Procedure
 

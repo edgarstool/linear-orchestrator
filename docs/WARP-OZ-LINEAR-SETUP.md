@@ -53,7 +53,8 @@ oz integration create linear --environment <ENV_ID>
 | API 金鑰 | ✅ 已寫入 Windows 使用者環境變數 `WARP_API_KEY` |
 | Environment `edgar-linear-dev` | ✅ `gMtdQHl184AFGV1DgM8eLk` |
 | Linear integration | ✅ 已連線，綁定 `edgar-linear-dev` |
-| 一鍵腳本 | `scripts/setup-warp-api.ps1`、`scripts/ask-warp.ps1` |
+| 一鍵腳本 | `setup-warp-api.ps1`、`ask-warp.ps1`、`watch-warp-run.ps1`、`install-warp-skills.ps1` |
+| Warp 技能 | `skills/warp-oz-{cursor,router,deploy,monitor,github-actions,linear}/` |
 
 ### 德德怎麼用（不用懂 API）
 
