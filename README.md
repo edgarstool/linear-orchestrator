@@ -91,6 +91,12 @@ Cloudflared 跑在 Windows 服務即可。
 - hermes CLI 已裝
 - Linear personal API key（可讀寫 issue / comment）
 
+## Docs / 文件
+
+- `docs/WINDOWS-SETUP.zh-TW.md` — Windows 原生安裝與操作
+- `docs/TUNNEL-MIGRATION.md` — tunnel 遷移紀錄
+- `docs/EDG-146-daily-cycle-validation.zh-TW.md` — EDG-146 日常工作循環驗證（含 EDG-163 區域守則、EDG-77 落點地圖與邊界說明）
+
 ## License
 
 MIT
