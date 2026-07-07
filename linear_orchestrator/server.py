@@ -21,6 +21,30 @@ from .dashboard import index as dashboard_index
 log = logging.getLogger("orch.server")
 
 
+def _track_pending(app: web.Application, coro) -> asyncio.Task:
+    """Schedule a background task and drop it from ``_pending`` once it settles.
+
+    Without the done callback, every completed or failed ``_process`` task would
+    stay referenced in ``app['_pending']`` forever, leaking memory and leaving
+    stale task state behind. Discarding on completion keeps the set bounded to
+    only genuinely in-flight work. The same path fires for success, failure and
+    cancellation, so cleanup happens best-effort without blocking the task.
+    """
+    task = asyncio.create_task(coro)
+    pending = app["_pending"]
+    pending.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        pending.discard(t)
+        if not t.cancelled():
+            exc = t.exception()
+            if exc is not None:
+                log.warning("background task failed: %r", exc)
+
+    task.add_done_callback(_done)
+    return task
+
+
 async def _handle_linear(request: web.Request) -> web.Response:
     cfg: Config = request.app["cfg"]
     store: SessionStore = request.app["store"]
@@ -77,9 +101,7 @@ async def _handle_linear(request: web.Request) -> web.Response:
                                   "delivery_id": delivery_id})
 
     # respond fast to Linear; do the heavy work in background
-    request.app["_pending"].add(asyncio.create_task(
-        _process(cfg, store, ev, delivery_id, request.app["bcast"])
-    ))
+    _track_pending(request.app, _process(cfg, store, ev, delivery_id, request.app["bcast"]))
     return web.json_response({"status": "queued", "session": ev.session_key,
                               "delivery_id": delivery_id, "act_reason": why}, status=202)
 
@@ -213,9 +235,7 @@ async def _retry(request: web.Request) -> web.Response:
     ev = parse_event(payload, cfg.agent_linear_user_id)
     new_id = f"retry-{delivery_id}-{int(time.time())}"
     store.upsert(ev.session_key, ev.issue_id, ev.issue_identifier, ev.agent_session_id)
-    request.app["_pending"].add(asyncio.create_task(
-        _process(cfg, store, ev, new_id, request.app["bcast"])
-    ))
+    _track_pending(request.app, _process(cfg, store, ev, new_id, request.app["bcast"]))
     return web.json_response({"status": "retrying", "original": delivery_id,
                               "new_delivery_id": new_id, "session": ev.session_key}, status=202)
 
