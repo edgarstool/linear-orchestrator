@@ -8,6 +8,9 @@ User=__USER__
 WorkingDirectory=__HERE__
 EnvironmentFile=-%h/.hermes/.env
 EnvironmentFile=-__HERE__/.env
+# Durable runtime state; override in .env if it should live elsewhere.
+# See docs/STATE-PERSISTENCE.zh-TW.md for backup/restore expectations.
+Environment=LINEAR_ORCHESTRATOR_STATE_DIR=%h/.local/share/linear-orchestrator
 ExecStart=%h/linear-orchestrator-venv/bin/python -m linear_orchestrator
 Restart=on-failure
 RestartSec=5

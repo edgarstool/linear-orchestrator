@@ -64,6 +64,21 @@ powershell -ExecutionPolicy Bypass -File scripts\Stop-LinearOrchestrator.ps1
 
 Dashboard：`http://127.0.0.1:8645/`
 
+## Runtime 狀態與恢復
+
+關鍵可變狀態（session 對應、delivery 紀錄、webhook payload）都存在單一 SQLite state root，
+預設 `~/.local/share/linear-orchestrator`，可用 `LINEAR_ORCHESTRATOR_STATE_DIR` 指到持久化儲存。
+服務啟動時會自動恢復被當機／部署中斷的 delivery。
+
+```bash
+curl -s http://127.0.0.1:8645/state | jq          # 狀態位置、筆數、integrity、上次恢復結果
+python3 -m linear_orchestrator.state_cli inspect  # 不需服務在跑
+python3 -m linear_orchestrator.state_cli backup --keep 7
+python3 -m linear_orchestrator.state_cli restore <snapshot>.db --force
+```
+
+備份範圍、恢復步驟、哪些檔案可以安全刪除：`docs/STATE-PERSISTENCE.zh-TW.md`
+
 ## tunnel 整合
 
 Token tunnel **edgar-local-01-tunnel**（Cloudflare Dashboard 管理）：

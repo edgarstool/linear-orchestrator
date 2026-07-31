@@ -11,6 +11,7 @@ dependencies = [
 
 [project.scripts]
 linear-orchestrator = "linear_orchestrator.__main__:main"
+linear-orchestrator-state = "linear_orchestrator.state_cli:main"
 
 [build-system]
 requires = ["setuptools>=61"]

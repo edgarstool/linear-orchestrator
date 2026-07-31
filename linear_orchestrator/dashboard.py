@@ -89,9 +89,10 @@ const HUB = location.origin;
 function pill(status) {
   if (!status) return '';
   const cls = {
-    'written': 'ok', 'queued': 'ok', 'duplicate': 'skip', 'skip': 'skip',
+    'written': 'ok', 'queued': 'warn', 'running': 'warn', 'duplicate': 'skip', 'skip': 'skip',
     'hermes_fail': 'fail', 'write_fail': 'fail', 'exception': 'fail',
-    'hermes_skip': 'warn',
+    'thought_fail': 'fail', 'interrupted': 'fail',
+    'hermes_skip': 'warn', 'recovered': 'ok',
   }[status] || 'skip';
   return `<span class="pill ${cls}">${status}</span>`;
 }
@@ -120,7 +121,7 @@ async function loadAll() {
     </tr>`).join('');
   const tbD = document.querySelector('#t-deliv tbody');
   tbD.innerHTML = d.map(r => {
-    const retryable = ['hermes_fail','write_fail','exception'].includes(r.status);
+    const retryable = ['hermes_fail','write_fail','exception','thought_fail','interrupted'].includes(r.status);
     const retryBtn = retryable
       ? ` <button onclick="retryDelivery(event,'${esc(r.delivery_id)}')">retry</button>`
       : '';
