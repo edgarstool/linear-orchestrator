@@ -11,7 +11,6 @@ applyTo: "**"
 - 本機 = 基地
 - Cloudflare = 外網城門
 - `edgars.tools` = 工具基礎設施主網域
-- `whoasked.vip` = 產品網域
 - Google Workspace = 身份與文件層
 - Notion = 人類控制台
 - VPS = 24/7 小後端
@@ -49,7 +48,6 @@ applyTo: "**"
 ## Cloudflare / 網域
 
 - `edgars.tools` 子網：`www`、`docs`、`status`、`hooks`、`api`、`mcp`、`auth`、`kb`、`lab`、`admin`
-- `whoasked.vip` 子網：`www`、`app`、`api`、`docs`、`status`、`admin`
 - `hooks.edgars.tools` = unified webhook inbox
 - `mcp.edgars.tools/mcp` = MCP endpoint（必須有 Access / auth / network boundary）
 
