@@ -1,5 +1,7 @@
 # linear-orchestrator
 
+> **LEGACY / MIGRATION-ONLY (2026-09-22):** Linear is retired as EDGAR-OS's active task ledger and webhook control plane. This repository is preserved for migration provenance and historical reconstruction. Do not deploy or subscribe new Linear webhooks. Target migration system: YouTrack Cloud (<https://edgars.youtrack.cloud>). Treat this repository as archival until full export/import/reconciliation is complete.
+
 Linear webhook → Hermes 中介層。修掉「Did not respond」的根因：webhook 不該直接餵 hermes。
 
 ## 4 層架構
@@ -12,7 +14,7 @@ Linear  →  Cloudflare edge  →  cloudflared tunnel  →  127.0.0.1:8645
         │  linear-orchestrator (aiohttp service, this repo)          │
         │                                                            │
         │   1) sig       ── verify Linear-Signature + ±60s timestamp │
-        │   2) parser    ── normalise payload → {issue, action, ...} │
+        │   2) parser    ── normalise payload → {issue, action, ...}  │
         │   3) session   ── map Linear issue/agent_session → hermes  │
         │                   session id (連續對話、不重複問)          │
         │   4) runner    ── 呼 hermes (CLI or API server 8642)       │
