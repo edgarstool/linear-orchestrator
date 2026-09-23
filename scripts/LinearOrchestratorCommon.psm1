@@ -4,6 +4,10 @@ $script:RunDir = Join-Path "G:\AI_WORK_512\run" "linear-orchestrator"
 $script:PidFile = Join-Path $script:RunDir "orchestrator.pid"
 $script:LogFile = Join-Path $script:RunDir "orchestrator.out.log"
 $script:ErrLogFile = Join-Path $script:RunDir "orchestrator.err.log"
+# Durable runtime state (sessions + deliveries + webhook payloads). Must NOT
+# live in RunDir: RunDir is disposable, this is not. See docs/STATE-PERSISTENCE.zh-TW.md.
+$script:StateDir = Join-Path "G:\AI_WORK_512\state" "linear-orchestrator"
+$script:BackupDir = Join-Path "G:\AI_WORK_512\backups" "linear-orchestrator"
 $script:VenvPython = Join-Path $script:RepoRoot ".venv\Scripts\python.exe"
 $script:HealthUrl = "http://127.0.0.1:8645/healthz"
 $script:DopplerProject = "handcraft-mcp"
@@ -25,8 +29,27 @@ function Get-OrchestratorHealthUrl {
     return $script:HealthUrl
 }
 
+function Get-OrchestratorStateDir {
+    if ($env:LINEAR_ORCHESTRATOR_STATE_DIR) {
+        return $env:LINEAR_ORCHESTRATOR_STATE_DIR
+    }
+    return $script:StateDir
+}
+
+function Get-OrchestratorBackupDir {
+    if ($env:LINEAR_ORCHESTRATOR_BACKUP_DIR) {
+        return $env:LINEAR_ORCHESTRATOR_BACKUP_DIR
+    }
+    return $script:BackupDir
+}
+
 function Ensure-OrchestratorRunDir {
     New-Item -ItemType Directory -Force -Path $script:RunDir | Out-Null
+}
+
+function Ensure-OrchestratorStateDir {
+    New-Item -ItemType Directory -Force -Path (Get-OrchestratorStateDir) | Out-Null
+    New-Item -ItemType Directory -Force -Path (Get-OrchestratorBackupDir) | Out-Null
 }
 
 function Resolve-HermesPath {
@@ -151,8 +174,10 @@ function Build-OrchestratorEnvironment {
     $hermesPath = Resolve-HermesPath
     $envMap = @{
         HERMES_PATH = $hermesPath
-        ORCHESTRATOR_HOST = "0.0.0.0"
+        ORCHESTRATOR_HOST = "*******"
         ORCHESTRATOR_PORT = "8645"
+        LINEAR_ORCHESTRATOR_STATE_DIR = (Get-OrchestratorStateDir)
+        LINEAR_ORCHESTRATOR_BACKUP_DIR = (Get-OrchestratorBackupDir)
     }
 
     # Doppler uses LINEAR_CLIENT_*; orchestrator expects LINEAR_OAUTH_*.
@@ -169,9 +194,12 @@ function Build-OrchestratorEnvironment {
 Export-ModuleMember -Function @(
     "Get-OrchestratorRepoRoot",
     "Get-OrchestratorRunDir",
+    "Get-OrchestratorStateDir",
+    "Get-OrchestratorBackupDir",
     "Get-OrchestratorPidFile",
     "Get-OrchestratorHealthUrl",
     "Ensure-OrchestratorRunDir",
+    "Ensure-OrchestratorStateDir",
     "Resolve-HermesPath",
     "Test-OrchestratorHealth",
     "Get-OrchestratorProcess",

@@ -9,6 +9,7 @@ from aiohttp import web
 
 import os
 from . import __version__
+from . import state as state_paths
 from .config import Config
 from .sig import verify as verify_sig
 from .parser import parse as parse_event, should_act
@@ -52,21 +53,17 @@ async def _handle_linear(request: web.Request) -> web.Response:
     except Exception as e:
         return web.json_response({"error": f"bad json: {e}"}, status=400)
 
-    # Dump every accepted webhook payload, keyed by delivery_id so /retry can find it.
-    try:
-        import pathlib
-        dump_dir = pathlib.Path.home() / ".local" / "share" / "linear-orchestrator" / "payloads"
-        dump_dir.mkdir(parents=True, exist_ok=True)
-        (dump_dir / f"{delivery_id}.json").write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    except Exception:
-        pass
-
     ev = parse_event(payload, cfg.agent_linear_user_id)
     act, why = should_act(ev)
     log.info("event type=%s action=%s issue=%s session=%s act=%s why=%s",
              ev.type, ev.action, ev.issue_identifier, ev.session_key, act, why)
+
+    # Persist every accepted webhook payload, keyed by delivery_id, so /retry
+    # and crash recovery can replay it from durable storage.
+    try:
+        store.save_payload(delivery_id, ev.session_key, payload)
+    except Exception:
+        log.exception("failed to persist payload for delivery=%s", delivery_id)
 
     store.upsert(ev.session_key, ev.issue_id, ev.issue_identifier, ev.agent_session_id)
 
@@ -75,6 +72,10 @@ async def _handle_linear(request: web.Request) -> web.Response:
         return web.json_response({"status": "skip", "reason": why,
                                   "session": ev.session_key,
                                   "delivery_id": delivery_id})
+
+    # Land the "accepted" state before answering Linear: if the process dies
+    # now, startup recovery sees a pending delivery instead of losing the event.
+    store.record_delivery(delivery_id, ev.session_key, "queued", why)
 
     # respond fast to Linear; do the heavy work in background
     request.app["_pending"].add(asyncio.create_task(
@@ -87,6 +88,7 @@ async def _handle_linear(request: web.Request) -> web.Response:
 async def _process(cfg: Config, store: SessionStore, ev, delivery_id: str,
                    broadcaster: Broadcaster) -> None:
     t0 = time.time()
+    store.record_delivery(delivery_id, ev.session_key, "running", "processing started")
     try:
         await broadcaster.publish(ev.session_key, {
             "type": "received", "delivery_id": delivery_id,
@@ -197,36 +199,159 @@ async def _stats(request: web.Request) -> web.Response:
     return web.json_response(store.stats_24h())
 
 
+def _replay(app: web.Application, payload: dict, new_id: str):
+    """Re-enqueue a stored payload for processing under a fresh delivery id."""
+    cfg: Config = app["cfg"]
+    store: SessionStore = app["store"]
+    ev = parse_event(payload, cfg.agent_linear_user_id)
+    store.upsert(ev.session_key, ev.issue_id, ev.issue_identifier, ev.agent_session_id)
+    store.save_payload(new_id, ev.session_key, payload)
+    store.record_delivery(new_id, ev.session_key, "queued", f"replay of {new_id}")
+    app["_pending"].add(asyncio.create_task(
+        _process(cfg, store, ev, new_id, app["bcast"])
+    ))
+    return ev
+
+
 async def _retry(request: web.Request) -> web.Response:
     """Re-run a failed delivery using its stored payload. delivery_id in path."""
     delivery_id = request.match_info["delivery_id"]
-    import pathlib
-    dump = pathlib.Path.home() / ".local" / "share" / "linear-orchestrator" / "payloads" / f"{delivery_id}.json"
-    if not dump.exists():
-        return web.json_response({"error": "no stored payload", "delivery_id": delivery_id}, status=404)
-    try:
-        payload = json.loads(dump.read_text(encoding="utf-8"))
-    except Exception as e:
-        return web.json_response({"error": f"bad payload file: {e}"}, status=500)
-    cfg: Config = request.app["cfg"]
     store: SessionStore = request.app["store"]
-    ev = parse_event(payload, cfg.agent_linear_user_id)
+    payload = store.load_payload(delivery_id)
+    if payload is None:
+        return web.json_response({"error": "no stored payload", "delivery_id": delivery_id}, status=404)
     new_id = f"retry-{delivery_id}-{int(time.time())}"
-    store.upsert(ev.session_key, ev.issue_id, ev.issue_identifier, ev.agent_session_id)
-    request.app["_pending"].add(asyncio.create_task(
-        _process(cfg, store, ev, new_id, request.app["bcast"])
-    ))
+    ev = _replay(request.app, payload, new_id)
     return web.json_response({"status": "retrying", "original": delivery_id,
                               "new_delivery_id": new_id, "session": ev.session_key}, status=202)
 
 
 async def _get_payload(request: web.Request) -> web.Response:
     delivery_id = request.match_info["delivery_id"]
-    import pathlib
-    dump = pathlib.Path.home() / ".local" / "share" / "linear-orchestrator" / "payloads" / f"{delivery_id}.json"
-    if not dump.exists():
+    store: SessionStore = request.app["store"]
+    payload = store.load_payload(delivery_id)
+    if payload is None:
         return web.json_response({"error": "no stored payload"}, status=404)
-    return web.Response(text=dump.read_text(encoding="utf-8"), content_type="application/json")
+    return web.json_response(payload)
+
+
+async def _state(request: web.Request) -> web.Response:
+    """Where durable state lives + whether it is healthy. Used by operators."""
+    store: SessionStore = request.app["store"]
+    info = state_paths.describe()
+    info.update({
+        "counts": store.counts(),
+        "pending_deliveries": store.list_pending()[:20],
+        "integrity": store.integrity_check(),
+        "last_recovery": request.app.get("_last_recovery"),
+        "last_backup": request.app.get("_last_backup"),
+        "backups": [str(p) for p in _list_backups()],
+    })
+    return web.json_response(info)
+
+
+async def _state_backup(request: web.Request) -> web.Response:
+    store: SessionStore = request.app["store"]
+    dest = _snapshot(store)
+    request.app["_last_backup"] = {"path": str(dest), "ts": time.time()}
+    return web.json_response({"status": "ok", "backup": str(dest),
+                              "bytes": dest.stat().st_size})
+
+
+BACKUP_PREFIX = "sessions-"
+
+
+def _list_backups() -> list[Path]:
+    d = state_paths.backup_dir(create=False)
+    if not d.exists():
+        return []
+    return sorted(d.glob(f"{BACKUP_PREFIX}*.db"))
+
+
+def _snapshot(store: SessionStore, keep: int | None = None) -> Path:
+    """Take an online snapshot and rotate old ones."""
+    keep = keep if keep is not None else int(os.environ.get("STATE_BACKUP_KEEP", "7"))
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    dest = state_paths.backup_dir() / f"{BACKUP_PREFIX}{stamp}.db"
+    store.backup(dest)
+    stale = _list_backups()[:-keep] if keep > 0 else []
+    for p in stale:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+    log.info("state backup written: %s (keeping %d)", dest, keep)
+    return dest
+
+
+def _age_seconds(ts: str | None) -> float:
+    if not ts:
+        return float("inf")
+    from datetime import datetime, timezone
+    try:
+        parsed = datetime.fromisoformat(ts)
+    except ValueError:
+        return float("inf")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - parsed).total_seconds()
+
+
+def recover_state(app: web.Application) -> dict:
+    """Rebuild runtime state after a crash, restart, or failed deploy."""
+    store: SessionStore = app["store"]
+    imported = 0
+    try:
+        imported = store.import_legacy_payloads()
+    except Exception:
+        log.exception("legacy payload import failed")
+    interrupted = store.mark_interrupted()
+
+    auto_resume = os.environ.get("STATE_AUTO_RESUME", "1").strip().lower() not in (
+        "0", "false", "no"
+    )
+    max_age = int(os.environ.get("STATE_RESUME_MAX_AGE_SEC", "3600"))
+    limit = int(os.environ.get("STATE_RESUME_LIMIT", "20"))
+    resumed: list[str] = []
+    skipped: list[str] = []
+    if auto_resume:
+        for item in interrupted[-limit:]:
+            delivery_id = item["delivery_id"]
+            if _age_seconds(item.get("ts")) > max_age:
+                skipped.append(delivery_id)
+                continue
+            payload = store.load_payload(delivery_id)
+            if payload is None:
+                skipped.append(delivery_id)
+                continue
+            try:
+                _replay(app, payload, f"resume-{delivery_id}-{int(time.time())}")
+                resumed.append(delivery_id)
+            except Exception:
+                log.exception("resume failed for delivery=%s", delivery_id)
+                skipped.append(delivery_id)
+    else:
+        skipped = [i["delivery_id"] for i in interrupted]
+
+    summary = {
+        "ts": time.time(),
+        "legacy_payloads_imported": imported,
+        "interrupted": [i["delivery_id"] for i in interrupted],
+        "resumed": resumed,
+        "skipped": skipped,
+        "auto_resume": auto_resume,
+    }
+    log.info(
+        "state recovery: imported=%d interrupted=%d resumed=%d skipped=%d db=%s",
+        imported, len(interrupted), len(resumed), len(skipped), store.path,
+    )
+    if imported or interrupted:
+        store.record_delivery(
+            f"recovery-{int(summary['ts'])}", "_recovery", "recovered",
+            json.dumps(summary, ensure_ascii=False)[:1000],
+        )
+    app["_last_recovery"] = summary
+    return summary
 
 
 async def _self_test(app: web.Application) -> None:
@@ -255,36 +380,63 @@ async def _self_test(app: web.Application) -> None:
 
 
 async def _cleanup_payloads(app: web.Application) -> None:
-    """Background loop: delete dumped payloads older than 7 days."""
-    import pathlib
-    dump_dir = pathlib.Path.home() / ".local" / "share" / "linear-orchestrator" / "payloads"
+    """Background loop: drop stored payloads older than the retention window."""
+    store: SessionStore = app["store"]
+    days = int(os.environ.get("PAYLOAD_RETENTION_DAYS", "7"))
     while True:
         try:
             await asyncio.sleep(3600 * 24)
-            cutoff = time.time() - 7 * 86400
-            removed = 0
-            if dump_dir.exists():
-                for p in dump_dir.iterdir():
+            removed = store.prune_payloads(days)
+            # legacy on-disk dumps, if a pre-EDG-86 deploy left any behind
+            cutoff = time.time() - days * 86400
+            for d in state_paths.legacy_payload_dirs():
+                if not d.exists():
+                    continue
+                for p in d.iterdir():
                     if p.is_file() and p.stat().st_mtime < cutoff:
-                        try: p.unlink(); removed += 1
-                        except Exception: pass
+                        try:
+                            p.unlink()
+                            removed += 1
+                        except OSError:
+                            pass
             if removed:
-                log.info("cleanup: removed %d old payload files", removed)
+                log.info("cleanup: removed %d payloads older than %dd", removed, days)
         except asyncio.CancelledError:
             return
         except Exception:
             log.exception("cleanup error")
 
 
+async def _backup_loop(app: web.Application) -> None:
+    """Background loop: periodic online snapshot of the state database."""
+    store: SessionStore = app["store"]
+    interval = int(os.environ.get("STATE_BACKUP_INTERVAL_SEC", str(3600 * 24)))
+    if interval <= 0:
+        log.info("state backup loop disabled (STATE_BACKUP_INTERVAL_SEC=%d)", interval)
+        return
+    log.info("state backup loop started, interval=%ds", interval)
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            dest = _snapshot(store)
+            app["_last_backup"] = {"path": str(dest), "ts": time.time()}
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception("state backup failed")
+
+
 def make_app(cfg: Config | None = None) -> web.Application:
     cfg = cfg or Config.from_env()
-    db_path = Path.home() / ".local" / "share" / "linear-orchestrator" / "sessions.db"
-    store = SessionStore(db_path)
+    store = SessionStore(state_paths.db_path())
+    log.info("runtime state db: %s", store.path)
     app = web.Application()
     app["cfg"] = cfg
     app["store"] = store
     app["bcast"] = Broadcaster()
     app["_pending"] = set()
+    app["_last_recovery"] = None
+    app["_last_backup"] = None
     app.router.add_post("/webhooks/linear", _handle_linear)
     app.router.add_get("/healthz", _healthz)
     app.router.add_get("/sessions", _list_sessions)
@@ -293,16 +445,27 @@ def make_app(cfg: Config | None = None) -> web.Application:
     app.router.add_get("/sessions/{session_key}/stream", _stream)
     app.router.add_post("/retry/{delivery_id}", _retry)
     app.router.add_get("/payloads/{delivery_id}", _get_payload)
+    app.router.add_get("/state", _state)
+    app.router.add_post("/state/backup", _state_backup)
     app.router.add_get("/", dashboard_index)
 
     async def _on_startup(app):
+        # Rebuild state before serving traffic: import legacy payloads, close
+        # out deliveries killed mid-flight, replay the recent ones.
+        recover_state(app)
         app["_bg_self_test"] = asyncio.create_task(_self_test(app))
         app["_bg_cleanup"] = asyncio.create_task(_cleanup_payloads(app))
+        app["_bg_backup"] = asyncio.create_task(_backup_loop(app))
 
     async def _on_cleanup(app):
-        for k in ("_bg_self_test", "_bg_cleanup"):
+        for k in ("_bg_self_test", "_bg_cleanup", "_bg_backup"):
             t = app.get(k)
             if t: t.cancel()
+        store: SessionStore = app["store"]
+        try:
+            store.checkpoint()
+        finally:
+            store.close()
 
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)

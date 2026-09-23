@@ -10,6 +10,7 @@ Import-Module (Join-Path $PSScriptRoot "LinearOrchestratorCommon.psm1") -Force
 $repoRoot = Get-OrchestratorRepoRoot
 $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
 Ensure-OrchestratorRunDir
+Ensure-OrchestratorStateDir
 
 $wslConflict = Test-WslOrchestratorConflict
 if ($wslConflict) {
